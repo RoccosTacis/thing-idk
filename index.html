@@ -36,6 +36,12 @@
     background:linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.18) 45%,rgba(0,0,0,.42));
     z-index:0;
   }
+  body.custom-bg::after{opacity:0;}
+  #custom-bg-layer{
+    position:fixed; inset:0; z-index:-1; pointer-events:none;
+    display:none; background-position:center; background-size:cover; background-repeat:no-repeat;
+  }
+  body.custom-bg #custom-bg-layer{display:block;}
 
   .grid-overlay{
     position:fixed; inset:0; pointer-events:none; opacity:.08;
@@ -348,6 +354,7 @@
   </div>
 </div>
 
+<div id="custom-bg-layer" aria-hidden="true"></div>
 <div class="desktop">
   <div class="desktop-icons" id="desktop-icons">
 
@@ -381,6 +388,7 @@
 
 <div id="desktop-context-menu">
   <button class="ctx-item" id="ctxUploadBg">🖼️ Change background</button>
+  <button class="ctx-item" id="ctxResetBg">↺ Reset background</button>
   <button class="ctx-item" id="ctxUploadApp">📄 Upload HTML app</button>
   <div class="ctx-sep"></div>
   <div class="ctx-muted">Timmy Math Work</div>
@@ -529,16 +537,6 @@ const APPS = {
 
   ytdl:      { title:'YouTube Downloader', type:'panel', icon:iconYtdl, render:renderYtdlPanel, w:900, h:650 },
   uploader:  { title:'HTML Uploader', type:'panel', icon:iconUploader, render:renderUploaderPanel, w:640, h:560 },
-};
-
-/* Link Maker now loads the attached P2P bulk Publisher tool. */
-APPS.linkmaker = {
-  title:'Link Maker',
-  type:'remoteIframe',
-  icon:iconLinkMaker,
-  url:'https://roccostacis.github.io/thing-idk/linkmaker.html',
-  w:980,
-  h:720
 };
 
 function b64ToUtf8(b64){
@@ -940,7 +938,7 @@ function renderUploaderPanel(container){
   container.innerHTML = `
     <div class="panel">
       <h2>HTML Uploader</h2>
-      <p class="desc">Add your own .html file as a new app icon on the desktop. It runs entirely in your browser, sandboxed inside its own window — nothing is uploaded anywhere.</p>
+      <p class="desc">Add your own .html file as a new app icon on the desktop. It runs in your browser inside its own sandboxed window and is saved only in this browser.</p>
       <div class="dropzone" id="dz">
         <svg viewBox="0 0 24 24" fill="none" stroke="#f2f2f4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
         <div class="dz-title">Drop an .html file here, or click to choose</div>
@@ -997,7 +995,7 @@ function renderUploaderPanel(container){
   refreshList();
 }
 
-function registerUploadedApp(filename, htmlText){
+function registerUploadedApp(filename, htmlText, options = {}){
   uploadCounter++;
   const id = 'upload_' + uploadCounter;
   const title = filename.replace(/\.html?$/i,'');
@@ -1013,6 +1011,13 @@ function registerUploadedApp(filename, htmlText){
     w: 900, h: 640,
     isUpload: true
   };
+  if(options.persist !== false){
+    try{
+      const saved = JSON.parse(localStorage.getItem('timmyMathWorkHtmlApps') || '[]');
+      saved.push({filename, htmlText});
+      localStorage.setItem('timmyMathWorkHtmlApps', JSON.stringify(saved.slice(-12)));
+    }catch(_){}
+  }
 
   // add a desktop icon for it
   const dIcons = document.getElementById('desktop-icons');
@@ -1025,9 +1030,104 @@ function registerUploadedApp(filename, htmlText){
   el.addEventListener('dblclick', ()=> openApp(id));
   dIcons.prepend(el);
 
-  openApp(id);
+  if(options.open !== false) openApp(id);
 }
 
+function addCustomHtmlFile(file){
+  if(!file) return;
+  if(!/\.html?$/i.test(file.name)){
+    alert('Please choose an .html file.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => registerUploadedApp(file.name, String(reader.result));
+  reader.onerror = () => alert('Could not read that HTML file.');
+  reader.readAsText(file);
+}
+
+function applyCustomBackground(dataUrl, persist = true){
+  const layer = document.getElementById('custom-bg-layer');
+  if(!layer) return;
+  if(dataUrl){
+    layer.style.backgroundImage = `url("${dataUrl}")`;
+    document.body.classList.add('custom-bg');
+    if(persist){
+      try{ localStorage.setItem('timmyMathWorkBackground', dataUrl); }catch(_){}
+    }
+  }else{
+    layer.style.backgroundImage = '';
+    document.body.classList.remove('custom-bg');
+    if(persist){
+      try{ localStorage.removeItem('timmyMathWorkBackground'); }catch(_){}
+    }
+  }
+}
+
+function setupCustomizationControls(){
+  const menu = document.getElementById('desktop-context-menu');
+  const bgPicker = document.getElementById('bgPicker');
+  const htmlPicker = document.getElementById('htmlAppPicker');
+  const hideMenu = () => { if(menu) menu.style.display = 'none'; };
+
+  document.addEventListener('contextmenu', e => {
+    if(e.target.closest('.window, .dock-wrap, input, textarea, button, select')) return;
+    e.preventDefault();
+    if(!menu) return;
+    menu.style.display = 'block';
+    const x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 8);
+    const y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 8);
+    menu.style.left = Math.max(8, x) + 'px';
+    menu.style.top = Math.max(8, y) + 'px';
+  });
+  document.addEventListener('click', hideMenu);
+  document.addEventListener('scroll', hideMenu, true);
+
+  document.getElementById('ctxUploadBg')?.addEventListener('click', e => {
+    e.stopPropagation();
+    hideMenu();
+    bgPicker?.click();
+  });
+  document.getElementById('ctxResetBg')?.addEventListener('click', e => {
+    e.stopPropagation();
+    hideMenu();
+    applyCustomBackground('');
+  });
+  document.getElementById('ctxUploadApp')?.addEventListener('click', e => {
+    e.stopPropagation();
+    hideMenu();
+    htmlPicker?.click();
+  });
+  document.getElementById('ctxReload')?.addEventListener('click', e => {
+    e.stopPropagation();
+    hideMenu();
+    location.reload();
+  });
+  bgPicker?.addEventListener('change', () => {
+    const file = bgPicker.files?.[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => applyCustomBackground(String(reader.result));
+    reader.readAsDataURL(file);
+    bgPicker.value = '';
+  });
+  htmlPicker?.addEventListener('change', () => {
+    addCustomHtmlFile(htmlPicker.files?.[0]);
+    htmlPicker.value = '';
+  });
+
+  try{
+    const savedBg = localStorage.getItem('timmyMathWorkBackground');
+    if(savedBg) applyCustomBackground(savedBg, false);
+    const savedApps = JSON.parse(localStorage.getItem('timmyMathWorkHtmlApps') || '[]');
+    savedApps.forEach(app => {
+      if(app?.filename && typeof app.htmlText === 'string'){
+        registerUploadedApp(app.filename, app.htmlText, {persist:false, open:false});
+      }
+    });
+  }catch(_){}
+}
+
+setupCustomizationControls();
 
 /* ============================================================
    BROWSER
