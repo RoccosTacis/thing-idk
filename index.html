@@ -789,9 +789,70 @@ function closeGlyph(){ return `<svg viewBox="0 0 8 8"><path d="M1 1l6 6M7 1L1 7"
 function minGlyph(){ return `<svg viewBox="0 0 8 8"><path d="M1 4h6" stroke="#5a3d00" stroke-width="1.3" stroke-linecap="round"/></svg>`; }
 function zoomGlyph(){ return `<svg viewBox="0 0 8 8"><path d="M1 5 5 1M5 1H2M5 1v3M7 3 3 7M3 7h3M3 7V4" stroke="#0a4d0a" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
 
+function makeDesktopIconDraggable(el){
+  if(!el || el.dataset.dragReady) return;
+  el.dataset.dragReady = 'true';
+  el.style.touchAction = 'none';
+  el.style.cursor = 'grab';
+  let drag = null;
+
+  el.addEventListener('pointerdown', e => {
+    if(e.button !== 0) return;
+    drag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      rect: el.getBoundingClientRect(),
+      moved: false
+    };
+    el.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  });
+
+  el.addEventListener('pointermove', e => {
+    if(!drag || e.pointerId !== drag.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if(!drag.moved && Math.hypot(dx, dy) < 6) return;
+    if(!drag.moved){
+      drag.moved = true;
+      el.style.position = 'fixed';
+      el.style.zIndex = '450';
+      el.style.width = drag.rect.width + 'px';
+      el.style.left = drag.rect.left + 'px';
+      el.style.top = drag.rect.top + 'px';
+      el.style.margin = '0';
+      el.style.cursor = 'grabbing';
+      el.style.transition = 'none';
+    }
+    const desktop = document.querySelector('.desktop');
+    const bounds = desktop.getBoundingClientRect();
+    const nextLeft = Math.max(bounds.left + 4, Math.min(drag.rect.left + dx, window.innerWidth - drag.rect.width - 4));
+    const nextTop = Math.max(bounds.top + 4, Math.min(drag.rect.top + dy, window.innerHeight - drag.rect.height - 42));
+    el.style.left = nextLeft + 'px';
+    el.style.top = nextTop + 'px';
+    e.preventDefault();
+  });
+
+  const finishDrag = e => {
+    if(!drag || e.pointerId !== drag.pointerId) return;
+    if(drag.moved){
+      el.dataset.suppressClick = 'true';
+      setTimeout(() => { delete el.dataset.suppressClick; }, 0);
+    }
+    el.releasePointerCapture?.(drag.pointerId);
+    drag = null;
+    el.style.cursor = 'grab';
+  };
+  el.addEventListener('pointerup', finishDrag);
+  el.addEventListener('pointercancel', finishDrag);
+}
+
 document.querySelectorAll('.dicon[data-app], .dock-item[data-app]').forEach(el=>{
+  if(el.classList.contains('dicon')) makeDesktopIconDraggable(el);
   el.addEventListener('click', (e)=>{
     e.preventDefault();
+    if(el.dataset.suppressClick) return;
     openApp(el.dataset.app);
   });
 });
@@ -949,7 +1010,8 @@ function registerUploadedApp(filename, htmlText){
   el.className = 'dicon';
   el.dataset.app = id;
   el.innerHTML = `<div class="thumb">${iconFn()}</div><span>${APPS[id].title}</span>`;
-  el.addEventListener('click', ()=> openApp(id));
+  makeDesktopIconDraggable(el);
+  el.addEventListener('click', ()=> { if(!el.dataset.suppressClick) openApp(id); });
   el.addEventListener('dblclick', ()=> openApp(id));
   dIcons.prepend(el);
 
