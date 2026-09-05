@@ -531,6 +531,16 @@ const APPS = {
   uploader:  { title:'HTML Uploader', type:'panel', icon:iconUploader, render:renderUploaderPanel, w:640, h:560 },
 };
 
+/* Link Maker now loads the attached P2P bulk Publisher tool. */
+APPS.linkmaker = {
+  title:'Link Maker',
+  type:'remoteIframe',
+  icon:iconLinkMaker,
+  url:'https://roccostacis.github.io/thing-idk/linkmaker.html',
+  w:980,
+  h:720
+};
+
 function b64ToUtf8(b64){
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
